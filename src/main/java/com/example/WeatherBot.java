@@ -1,9 +1,12 @@
 package com.example;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -30,6 +33,29 @@ public class WeatherBot extends TelegramLongPollingBot {
     public long chatId;
     private double latitude;
     private double longitude;
+    private double[] temperaturesArr = new double[24];
+    private String[] timesArr = new String[24];
+    private double[] windSpeedsArr = new double[24];
+    private double[] humiditiesArr = new double[24];
+    private double[] precipitationsArr = new double[24];
+    double highestTemperature = Double.MIN_VALUE;
+    double lowestTemperature = Double.MAX_VALUE;
+    double avgTemperature = Double.MAX_VALUE;
+    double highestWindSpeed = Double.MIN_VALUE;
+    double lowestWindSpeed = Double.MAX_VALUE;
+    double highestHumidity = Double.MIN_VALUE;
+    double lowestHumidity = Double.MAX_VALUE;
+
+    double highestPrecipitation = -1;
+    double totalPrecipitation = 0;
+
+    String highestTemperatureTime = "";
+    String lowestTemperatureTime = "";
+    String highestWindSpeedTime = "";
+    String lowestWindSpeedTime = "";
+    String highestHumidityTime = "";
+    String lowestHumidityTime = "";
+    String highestPrecipitationTime = "";
     @Override
     public String getBotUsername() {
         return "ej_weather_bot";
@@ -47,45 +73,19 @@ public class WeatherBot extends TelegramLongPollingBot {
             chatId = update.getMessage().getChatId();
 
             if (update.getMessage().hasText()) {
-                // Handle commands
                 if (messageText.equalsIgnoreCase("/start")) {
                     sendLocationRequest(chatId);
                 } else if (messageText.equalsIgnoreCase("/location")) {
                     sendLocationRequest(chatId);
                 }
             } else if (update.getMessage().hasLocation()) {
-                // This block will handle location updates
                 latitude = update.getMessage().getLocation().getLatitude();
                 longitude = update.getMessage().getLocation().getLongitude();
 
                 saveChatIdToFile();
                 handleLocation(chatId, latitude, longitude);
                 sendWelcomeMessage(chatId);
-                sendDailyWeatherUpdate(chatId);
             }
-        }
-    }
-
-    private void sendWelcomeMessage(long chatId) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText("Welcome! You will receive daily weather updates.");
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
-    }
-
-
-    private void handleLocation(long chatId, double latitude, double longitude) {
-        SendMessage message = new SendMessage();
-        message.setChatId(String.valueOf(chatId));
-        message.setText("Received your location: Latitude = " + latitude + ", Longitude = " + longitude);
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
         }
     }
 
@@ -111,10 +111,9 @@ public class WeatherBot extends TelegramLongPollingBot {
             for (String entry : entries) {
                 String[] parts = entry.trim().split(" ");
                 if (parts.length == 3) {
-                    long chatId = Long.parseLong(parts[0]);
+                    chatId = Long.parseLong(parts[0]);
                     latitude = Double.parseDouble(parts[1]);
                     longitude = Double.parseDouble(parts[2]);
-                    System.out.println("Sending update to: " + chatId);
                     sendDailyWeatherUpdate(chatId);
                 } else {
                     System.out.println("Invalid entry format: " + entry);
@@ -165,6 +164,28 @@ public class WeatherBot extends TelegramLongPollingBot {
         }
     }
 
+    private void handleLocation(long chatId, double latitude, double longitude) {
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+        message.setText("Received your location: Latitude = " + latitude + ", Longitude = " + longitude);
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendWelcomeMessage(long chatId) {
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+        message.setText("Welcome! You will receive daily weather updates.");
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
     public String getWeatherData() {
         String urlString = "https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude + "&hourly=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m&forecast_days=1";
 
@@ -174,7 +195,6 @@ public class WeatherBot extends TelegramLongPollingBot {
             conn.setRequestMethod("GET");
             conn.connect();
 
-            // Check if the response is successful
             int responseCode = conn.getResponseCode();
             if (responseCode != 200) {
                 throw new RuntimeException("HttpResponseCode: " + responseCode);
@@ -187,30 +207,57 @@ public class WeatherBot extends TelegramLongPollingBot {
             }
             sc.close();
 
-            // Log the raw JSON response for debugging
-            System.out.println("Raw JSON response: " + inline.toString());
-
-            // Parse the JSON response
             JSONObject json = new JSONObject(inline.toString());
-
-            // Extract required parameters
             JSONObject hourly = json.getJSONObject("hourly");
 
-            // Assuming we want the first hour's data
-            double temperature = hourly.getJSONArray("temperature_2m").getDouble(0);
-            double humidity = hourly.getJSONArray("relative_humidity_2m").getDouble(0);
-            double precipitation = hourly.getJSONArray("precipitation").getDouble(0);
-            double windSpeed = hourly.getJSONArray("wind_speed_10m").getDouble(0);
+            JSONArray times = hourly.getJSONArray("time");
+            JSONArray temperatures = hourly.getJSONArray("temperature_2m");
+            JSONArray humidities = hourly.getJSONArray("relative_humidity_2m");
+            JSONArray precipitations = hourly.getJSONArray("precipitation");
+            JSONArray windSpeeds = hourly.getJSONArray("wind_speed_10m");
 
-            return "Temperature: " + temperature + "°C\n" +
-                    "Humidity: " + humidity + "%\n" +
-                    "Precipitation: " + precipitation + "mm\n" +
-                    "Wind Speed: " + windSpeed + "m/s";
+            for (int i = 0; i < temperatures.length(); i++) {
+                temperaturesArr[i] = temperatures.getDouble(i);
+                String fullTime = times.getString(i);
+                String timePart = fullTime.split("T")[1];
+                timesArr[i] = timePart;
+                windSpeedsArr[i] = windSpeeds.getDouble(i);
+                humiditiesArr[i] = humidities.getDouble(i);
+                precipitationsArr[i] = precipitations.getDouble(i);
+            }
+
+            calculateValues();
+
+            StringBuilder result = new StringBuilder();
+            result.append("Weather for today (").append(times.getString(0).split("T")[0]).append(") :\n\n");
+            result.append("Average Temperature (6-23): ").append(String.format("%.2f", avgTemperature)).append("°C\n");
+            result.append("Highest Temperature (6-23): ").append(String.format("%.2f", highestTemperature)).append("°C at ").append(highestTemperatureTime).append("\n");
+            result.append("Lowest Temperature (6-23): ").append(String.format("%.2f", lowestTemperature)).append("°C at ").append(lowestTemperatureTime).append("\n\n");
+            result.append("Highest WindSpeed (6-23): ").append(String.format("%.2f", highestWindSpeed)).append("m/s at ").append(highestWindSpeedTime).append("\n");
+            result.append("Lowest WindSpeed (6-23): ").append(String.format("%.2f", lowestWindSpeed)).append("m/s at ").append(lowestWindSpeedTime).append("\n\n");
+            result.append("Highest Humidity (6-23): ").append(String.format("%.0f", highestHumidity)).append("% at ").append(highestHumidityTime).append("\n");
+            result.append("Lowest Humidity (6-23): ").append(String.format("%.0f", lowestHumidity)).append("% at ").append(lowestHumidityTime).append("\n\n");
+            result.append("Highest Precipitation (6-23): ").append(String.format("%.0f", highestPrecipitation)).append("mm at ").append(highestPrecipitationTime).append("\n");
+            result.append("Total Precipitation for the day (6-23): ").append(String.format("%.0f", totalPrecipitation)).append("mm\n");
+
+            return result.toString();
 
         } catch (Exception e) {
             e.printStackTrace();
         }
         return "Unable to fetch weather data.";
+    }
+
+    public void sendTemperatureGraph(long chatId, double[] temperatures, String[] times) {
+        try {
+            File chartFile = WeatherGraph.createTemperatureChart(temperatures, times);
+            SendPhoto photo = new SendPhoto();
+            photo.setChatId(String.valueOf(chatId));
+            photo.setPhoto(new InputFile(chartFile));
+            execute(photo);
+        } catch (IOException | TelegramApiException e) {
+            e.printStackTrace();
+        }
     }
 
     public void sendDailyWeatherUpdate(long chatId) {
@@ -224,5 +271,50 @@ public class WeatherBot extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
+
+        sendTemperatureGraph(chatId, temperaturesArr, timesArr);
+    }
+
+    public void calculateValues(){
+        double avg = 0;
+        for (int i = 6; i <= 23; i++) {
+            double temperature = temperaturesArr[i];
+            double windSpeed = windSpeedsArr[i];
+            double humidity = humiditiesArr[i];
+            String time = timesArr[i];
+            double precipitation = precipitationsArr[i];
+
+            if (temperature > highestTemperature) {
+                highestTemperature = temperature;
+                highestTemperatureTime = time;
+            }
+            if (temperature < lowestTemperature) {
+                lowestTemperature = temperature;
+                lowestTemperatureTime = time;
+            }
+            if (windSpeed > highestWindSpeed) {
+                highestWindSpeed = windSpeed;
+                highestWindSpeedTime = time;
+            }
+            if (windSpeed < lowestWindSpeed) {
+                lowestWindSpeed = windSpeed;
+                lowestWindSpeedTime = time;
+            }
+            if (humidity > highestHumidity) {
+                highestHumidity = humidity;
+                highestHumidityTime = time;
+            }
+            if (humidity < lowestHumidity) {
+                lowestHumidity = humidity;
+                lowestHumidityTime = time;
+            }
+            if (precipitation > highestPrecipitation) {
+                highestPrecipitation = precipitation;
+                highestPrecipitationTime = time;
+            }
+            avg += temperaturesArr[i];
+            totalPrecipitation += precipitation;
+        }
+        avgTemperature = avg / 18;
     }
 }

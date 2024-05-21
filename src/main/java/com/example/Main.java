@@ -2,6 +2,7 @@ package com.example;
 
 public class Main {
     public static void main(String[] args) {
-        System.out.println("Hello world!");
+        WeatherBot bot = new WeatherBot();
+        bot.sendDailyWeatherUpdate(YOUR_CHAT_ID);
     }
 }

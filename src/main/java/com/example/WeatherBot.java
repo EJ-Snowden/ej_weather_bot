@@ -2,18 +2,28 @@ package com.example;
 
 import org.json.JSONObject;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
 import java.util.Scanner;
 
 public class WeatherBot extends TelegramLongPollingBot {
 
     private final Dotenv dotenv = Dotenv.load();
+    public long chatId;
     @Override
     public String getBotUsername() {
         return "ej_weather_bot";
@@ -28,7 +38,9 @@ public class WeatherBot extends TelegramLongPollingBot {
     public void onUpdateReceived(Update update) {
         if (update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
-            long chatId = update.getMessage().getChatId();
+            chatId = update.getMessage().getChatId();
+
+            saveChatIdToFile();
 
             if (messageText.equalsIgnoreCase("/start")) {
                 SendMessage message = new SendMessage();
@@ -40,6 +52,49 @@ public class WeatherBot extends TelegramLongPollingBot {
                     e.printStackTrace();
                 }
             }
+        }
+    }
+
+    public void botConnect() throws TelegramApiException {
+        TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
+        try {
+            botsApi.registerBot(this);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+
+        File file = new File("chat_ids.txt");
+        if (!file.exists()) {
+            try {
+                file.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        try {
+            List<String> chatIds = Files.readAllLines(Paths.get("chat_ids.txt"));
+            for (String id : chatIds) {
+                long chatId = Long.parseLong(id.trim());
+                System.out.println("Sending update to: " + chatId);
+                this.sendDailyWeatherUpdate(chatId);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveChatIdToFile() {
+        String filePath = "chat_ids.txt";
+        try {
+            List<String> allLines = Files.readAllLines(Paths.get(filePath));
+            if (!allLines.contains(String.valueOf(chatId))) {
+                BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, true));
+                writer.write(chatId + "\n");
+                writer.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 

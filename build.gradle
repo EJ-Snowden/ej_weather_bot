@@ -15,6 +15,7 @@ dependencies {
 
     implementation 'org.telegram:telegrambots:6.0.1'
     implementation 'io.github.cdimascio:dotenv-java:2.2.0'
+    implementation 'ch.qos.logback:logback-classic:1.2.3'
 }
 
 test {

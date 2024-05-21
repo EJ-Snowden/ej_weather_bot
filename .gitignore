@@ -1,5 +1,6 @@
 .gradle
 .env
+chat_ids.txt
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
